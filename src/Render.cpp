@@ -1,9 +1,12 @@
 #include "Render.h"
 
+
+#include <fstream>
 #include <gsl/gsl_util>
 
 #include "Viewport.h"
 #include "SDL_vulkan.h"
+#include <glm/glm.hpp>
 
 #ifdef _DEBUG
 VkBool32 VKAPI_CALL RenderDebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType, uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData)
@@ -20,6 +23,29 @@ T ClampValue(const T& n, const T& lower, const T& upper) {
 	return std::max(lower, std::min(n, upper));
 }
 
+
+struct Vertex
+{
+	glm::vec3 Position;
+	glm::vec3 Color;
+};
+
+const Vertex kVertexData[] = {
+	{
+		{-0.5f, 0.5f, 0.f},
+		{0.f, 0.f, 1.f}
+	},
+	{
+		{0.f, -0.5f, 0.f},
+		{0.f, 1.f, 0.f}
+	},
+	{
+		{0.5f, 0.5f, 0.f},
+		{1.f, 0.f, 0.f}
+	},
+};
+
+
 EEngineStatus CRender::Initialize()
 {
 	vk::Result vkResult;
@@ -32,8 +58,12 @@ EEngineStatus CRender::Initialize()
 
 #ifdef _DEBUG
 	const size_t additionalExtensionCount = 1;
+	const uint32_t layerCount = 1;
+	const char* layers[] = { "VK_LAYER_KHRONOS_validation" };
 #else
 	const size_t additionalExtensionCount = 0;
+	const uint32_t layerCount = 0;
+	const char** layers = nullptr;
 #endif
 
 	const char** extensions = new const char* [extensionCount + additionalExtensionCount];
@@ -57,8 +87,8 @@ EEngineStatus CRender::Initialize()
 	const vk::InstanceCreateInfo instanceCreateInfo = {
 		{},
 		&kRenderApplicationInfo,
-		0,
-		nullptr,
+		layerCount,
+		layers,
 		extensionCount,
 		extensions
 	};
@@ -186,6 +216,7 @@ EEngineStatus CRender::Initialize()
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "CRender Error", "No compatible device found!", gEngine->GetViewport()->GetWindow());
 		return EEngineStatus::Failed;
 	}
+	m_PhysicalDevice = selPhysicalDevice;
 
 	SDL_Log("[CRender] Selected physical device: #%x", selPhysicalDevice.getProperties().deviceID);
 
@@ -388,8 +419,20 @@ EEngineStatus CRender::Initialize()
 	vk::SubpassDescription subPassDesc = {
 		{},
 		vk::PipelineBindPoint::eGraphics,
+		0,
+		nullptr,
 		1,
 		&colorAttachmentRef
+	};
+
+	vk::SubpassDependency dependency = {
+		0,
+		VK_SUBPASS_EXTERNAL,
+		vk::PipelineStageFlagBits::eColorAttachmentOutput,
+		vk::PipelineStageFlagBits::eBottomOfPipe,
+		vk::AccessFlagBits::eColorAttachmentWrite,
+		{},
+		vk::DependencyFlagBits::eByRegion
 	};
 
 	vk::RenderPassCreateInfo renderPassCreateInfo = {
@@ -397,7 +440,9 @@ EEngineStatus CRender::Initialize()
 		1,
 		&colorAttachment,
 		1,
-		&subPassDesc
+		&subPassDesc,
+		1,
+		&dependency
 	};
 
 	std::tie(vkResult, m_RenderPass1) = m_Device.createRenderPass(renderPassCreateInfo);
@@ -426,6 +471,199 @@ EEngineStatus CRender::Initialize()
 
 		i++;
 	}
+
+	// loading the shaders
+	if (LoadShadersTriangle() != EEngineStatus::Ok)
+	{
+		return EEngineStatus::Failed;
+	}
+
+	// creating the pipeline
+
+	// S1: IA
+	vk::VertexInputBindingDescription bindingDesc[] = {
+		{
+		0, // binding number
+		24, // sizeof(vec3) * 2 (see triangle.vert)
+		vk::VertexInputRate::eVertex
+		}
+	};
+
+	vk::VertexInputAttributeDescription attrDesc[] = {
+		// in vec3 inPosition
+		{
+		0,
+		0,
+		vk::Format::eR32G32B32Sfloat,
+		0
+		},
+		// in vec3 inColor
+		{
+		1,
+		0,
+		vk::Format::eR32G32B32Sfloat,
+		12
+		}
+	};
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputStateCreateInfo = {
+		{},
+		1,
+		bindingDesc,
+		2,
+		attrDesc
+	};
+
+	vk::PipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo = {
+		{},
+		vk::PrimitiveTopology::eTriangleList,
+		false
+	};
+
+	// S2: RS
+	vk::Viewport viewport = {
+		0,
+		0,
+		static_cast<float>(m_SwapChainExtent.width),
+		static_cast<float>(m_SwapChainExtent.height),
+		0.f,
+		1.f
+	};
+
+	vk::Rect2D scissor = {
+		{0, 0},
+		m_SwapChainExtent
+	};
+
+	vk::PipelineViewportStateCreateInfo viewportStateCreateInfo = {
+		{},
+		1,
+		&viewport,
+		1,
+		&scissor
+	};
+
+	vk::PipelineRasterizationStateCreateInfo rasterizationStateCreateInfo = {
+		{},
+		false,
+		false,
+		vk::PolygonMode::eFill,
+		vk::CullModeFlagBits::eNone,
+		vk::FrontFace::eCounterClockwise,
+		false,
+		0,
+		0,
+		0,
+		1.f
+	};
+
+	vk::PipelineMultisampleStateCreateInfo multisampleStateCreateInfo = {
+		{},
+		vk::SampleCountFlagBits::e1,
+		false
+	};
+
+	vk::PipelineColorBlendAttachmentState colorBlendAttachmentState = {
+		false,
+		vk::BlendFactor::eSrcAlpha,
+		vk::BlendFactor::eOneMinusSrcAlpha,
+		vk::BlendOp::eAdd,
+		vk::BlendFactor::eOne,
+		vk::BlendFactor::eZero,
+		vk::BlendOp::eAdd,
+		vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA // !!!!!!!!!!!!!!!!!IMPORTANT!!!!!!!!!!!!!!!!!!
+	};
+
+	vk::PipelineColorBlendStateCreateInfo colorBlendStateCreateInfo = {
+		{},
+		false,
+		vk::LogicOp::eCopy, // don't mind the op
+		1,
+		&colorBlendAttachmentState
+	};
+
+	vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
+
+	std::tie(vkResult, m_PipelineLayout) = m_Device.createPipelineLayout(pipelineLayoutCreateInfo);
+
+	// shader stages
+	vk::PipelineShaderStageCreateInfo vertShaderStageInfo = {
+		{},
+		vk::ShaderStageFlagBits::eVertex,
+		m_TriangleVS,
+		"main"
+	};
+
+	vk::PipelineShaderStageCreateInfo fragShaderStageInfo = {
+	{},
+		vk::ShaderStageFlagBits::eFragment,
+		m_TriangleFS,
+		"main"
+	};
+
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+	// finally creating the pipeline
+	vk::GraphicsPipelineCreateInfo pipelineCreateInfo = {
+		{},
+		2,
+		shaderStages,
+		&vertexInputStateCreateInfo,
+		&inputAssemblyStateCreateInfo,
+		nullptr,
+		&viewportStateCreateInfo,
+		&rasterizationStateCreateInfo,
+		&multisampleStateCreateInfo,
+		nullptr,
+		&colorBlendStateCreateInfo,
+		nullptr,
+		m_PipelineLayout,
+		m_RenderPass1,
+		0,
+		nullptr,
+		-1
+	};
+
+	std::tie(vkResult, m_Pipeline) = m_Device.createGraphicsPipeline(nullptr, pipelineCreateInfo);
+
+	if (vkResult != vk::Result::eSuccess)
+	{
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "CRender Error", "Unable to create graphics pipeline!", gEngine->GetViewport()->GetWindow());
+		return EEngineStatus::Failed;
+	}
+
+	// creating the vertex buffer
+
+	vk::BufferCreateInfo vertexBufferCreateInfo = {
+		{},
+		sizeof(kVertexData),
+		vk::BufferUsageFlagBits::eVertexBuffer,
+		vk::SharingMode::eExclusive
+	};
+
+	std::tie(vkResult, m_VertexBuffer) = m_Device.createBuffer(vertexBufferCreateInfo);
+	VKR(vkResult);
+
+	// allocate and bind memory for the buffer
+
+	vk::MemoryRequirements memoryRequirements = m_Device.getBufferMemoryRequirements(m_VertexBuffer);
+
+	vk::MemoryAllocateInfo vertexBufferAllocInfo = {
+		memoryRequirements.size,
+		FindMemoryType(memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+	};
+
+	std::tie(vkResult, m_VertexBufferMemory) = m_Device.allocateMemory(vertexBufferAllocInfo);
+	VKR(vkResult);
+	vkResult = m_Device.bindBufferMemory(m_VertexBuffer, m_VertexBufferMemory, 0);
+	VKR(vkResult);
+
+	// copy the vertex data
+	void* pVertexDataDest;
+	vkResult = m_Device.mapMemory(m_VertexBufferMemory, 0, sizeof(kVertexData), {}, &pVertexDataDest);
+	VKR(vkResult);
+	memcpy(pVertexDataDest, kVertexData, sizeof(kVertexData));
+	m_Device.unmapMemory(m_VertexBufferMemory);
 
 	// creating the semaphores
 	vk::SemaphoreCreateInfo semaphoreCreateInfo;
@@ -461,6 +699,9 @@ EEngineStatus CRender::Initialize()
 		vkResult = commandBuffer.begin(cbBeginInfo);
 		VKR(vkResult);
 
+		vk::ClearColorValue clearColor(std::array<float, 4>{0.33f * static_cast<float>(i), 0.f, 1.f, 1.f});
+		vk::ClearValue clearValue(clearColor);
+
 		vk::RenderPassBeginInfo beginInfo = {
 			m_RenderPass1,
 			m_SwapChainFrameBuffers[i],
@@ -468,22 +709,21 @@ EEngineStatus CRender::Initialize()
 				{0, 0},
 				m_SwapChainExtent
 			},
-			0
-		};
-
-		//commandBuffer.beginRenderPass(beginInfo, vk::SubpassContents::eInline);
-
-		vk::ClearColorValue clearColor(std::array<float, 4>{1.f, 0.f, 1.f, 1.f});
-		vk::ImageSubresourceRange clearRange = {
-			vk::ImageAspectFlagBits::eColor,
-			0,
 			1,
-			0,
-			1
+			&clearValue
 		};
-		commandBuffer.clearColorImage(swapChainImages[i], vk::ImageLayout::ePresentSrcKHR, clearColor, clearRange);
 
-		//commandBuffer.endRenderPass();
+		commandBuffer.beginRenderPass(beginInfo, vk::SubpassContents::eInline);
+
+		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_Pipeline);
+
+		vk::Buffer vertexBuffers[] = { m_VertexBuffer };
+		vk::DeviceSize offsets[] = { 0 };
+		commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
+
+		commandBuffer.draw(3, 1, 0, 0);
+
+		commandBuffer.endRenderPass();
 
 		vkResult = commandBuffer.end();
 		VKR(vkResult);
@@ -507,13 +747,14 @@ EEngineStatus CRender::Update()
 	vk::Semaphore waitSemaphores[] = { m_ImageAvailableSemaphore };
 	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
 	vk::Semaphore signalSemaphores[] = { m_RenderFinishedSemaphore };
+	vk::CommandBuffer commandBuffers[] = {m_CommandBuffers[imageIndex]};
 
 	vk::SubmitInfo submitInfo = {
 		1,
 		waitSemaphores,
 		waitStages,
 		1,
-		&m_CommandBuffers[imageIndex],
+		commandBuffers,
 		1,
 		signalSemaphores
 	};
@@ -542,7 +783,16 @@ EEngineStatus CRender::Update()
 EEngineStatus CRender::Shutdown()
 {
 	SDL_Log("[CRender] Shutting down...");
+	m_Device.freeMemory(m_VertexBufferMemory);
+	m_Device.destroyBuffer(m_VertexBuffer);
+	m_Device.destroyPipeline(m_Pipeline);
+	m_Device.destroyPipelineLayout(m_PipelineLayout);
+	m_Device.freeCommandBuffers(m_CommandPool, m_CommandBuffers.size(), m_CommandBuffers.data());
+	m_Device.destroyCommandPool(m_CommandPool);
 	m_Device.destroySemaphore(m_ImageAvailableSemaphore);
+	m_Device.destroySemaphore(m_RenderFinishedSemaphore);
+	m_Device.destroyShaderModule(m_TriangleVS);
+	m_Device.destroyShaderModule(m_TriangleFS);
 	for (vk::Framebuffer& frameBuffer : m_SwapChainFrameBuffers)
 	{
 		m_Device.destroyFramebuffer(frameBuffer);
@@ -560,5 +810,71 @@ EEngineStatus CRender::Shutdown()
 #endif
 	m_Instance.destroy();
 	return EEngineStatus::Ok;
+}
+
+EEngineStatus CRender::LoadShadersTriangle()
+{
+	vk::Result vkResult;
+
+	std::ifstream fVS("../../shaders/triangle.vert.spv", std::ios::ate | std::ios::binary);
+	if (!fVS.is_open())
+	{
+		return EEngineStatus::Failed;
+	}
+
+	const size_t fVSSize = fVS.tellg();
+	std::vector<char> vsBuffer(fVSSize);
+	fVS.seekg(0);
+	fVS.read(vsBuffer.data(), fVSSize);
+	fVS.close();
+
+	vk::ShaderModuleCreateInfo shaderModuleCreateInfo = {
+		{},
+		vsBuffer.size(),
+		reinterpret_cast<const uint32_t*>(vsBuffer.data())
+	};
+
+	std::tie(vkResult, m_TriangleVS) = m_Device.createShaderModule(shaderModuleCreateInfo);
+	if (vkResult != vk::Result::eSuccess)
+	{
+		return EEngineStatus::Failed;
+	}
+
+	std::ifstream fFS("../../shaders/triangle.frag.spv", std::ios::ate | std::ios::binary);
+	if (!fFS.is_open())
+	{
+		return EEngineStatus::Failed;
+	}
+
+	const size_t fFSSize = fFS.tellg();
+	std::vector<char> fsBuffer(fFSSize);
+	fFS.seekg(0);
+	fFS.read(fsBuffer.data(), fFSSize);
+	fFS.close();
+
+	shaderModuleCreateInfo.codeSize = fsBuffer.size();
+	shaderModuleCreateInfo.pCode = reinterpret_cast<const uint32_t*>(fsBuffer.data());
+
+	std::tie(vkResult, m_TriangleFS) = m_Device.createShaderModule(shaderModuleCreateInfo);
+	if (vkResult != vk::Result::eSuccess)
+	{
+		return EEngineStatus::Failed;
+	}
+
+	return EEngineStatus::Ok;
+}
+
+uint32_t CRender::FindMemoryType(const uint32_t typeFilter, const vk::MemoryPropertyFlags properties) const
+{
+	const vk::PhysicalDeviceMemoryProperties memoryProperties = m_PhysicalDevice.getMemoryProperties();
+
+	for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
+		if ((typeFilter & (1 << i)) && (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+			return i;
+		}
+	}
+
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "CRender Error", "Unable to find a !", gEngine->GetViewport()->GetWindow());
+	std::abort();
 }
 
