@@ -466,12 +466,12 @@ EEngineStatus CRender::Initialize()
 	}
 
 	{
-		// creating the first render pass
+		// creating the ImGui render pass
 		vk::AttachmentDescription colorAttachment = {
 			{},
 			m_SwapChainFormat,
 			vk::SampleCountFlagBits::e1,
-			vk::AttachmentLoadOp::eDontCare,
+			vk::AttachmentLoadOp::eLoad,
 			vk::AttachmentStoreOp::eStore,
 			vk::AttachmentLoadOp::eDontCare,
 			vk::AttachmentStoreOp::eDontCare,
