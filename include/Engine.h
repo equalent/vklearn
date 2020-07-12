@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <chrono>
 
 enum class EEngineStatus : uint8_t
 {
@@ -20,6 +21,7 @@ public:
 	CRender* GetRender() const;
 	void Quit();
 private:
+	std::chrono::high_resolution_clock::time_point m_LastTime;
 	bool m_ShouldUpdate = true;
 	SEngineSubsystems* m_Subsystems = nullptr;
 	

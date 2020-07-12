@@ -75,11 +75,19 @@ EEngineStatus CEngine::Initialize()
 		return EEngineStatus::Failed;
 	}
 
+	m_LastTime = std::chrono::high_resolution_clock::now();
+
 	return EEngineStatus::Ok;
 }
 
 EEngineStatus CEngine::Update()
 {
+	using namespace  std::chrono;
+
+	const high_resolution_clock::time_point now = high_resolution_clock::now();
+	duration<float> deltaTime = duration_cast<duration<float>>(now - m_LastTime);
+	m_LastTime = now;
+	
 	EEngineStatus status = m_Subsystems->Viewport.Update();
 
 	if (status != EEngineStatus::Ok)
@@ -89,7 +97,7 @@ EEngineStatus CEngine::Update()
 
 	if(!m_ShouldUpdate)return EEngineStatus::Ok;
 
-	status = m_Subsystems->Render.Update();
+	status = m_Subsystems->Render.Update(deltaTime.count());
 
 	if(status != EEngineStatus::Ok)
 	{

@@ -1,6 +1,8 @@
 #include "Render.h"
 
 
+
+#include <chrono>
 #include <fstream>
 #include <gsl/gsl_util>
 
@@ -30,6 +32,12 @@ struct Vertex
 	glm::vec3 Color;
 };
 
+struct UniBuffer
+{
+	float Angles;
+	float RotationSpeed;
+};
+
 const Vertex kVertexData[] = {
 	{
 		{-0.5f, 0.5f, 0.f},
@@ -43,6 +51,10 @@ const Vertex kVertexData[] = {
 		{0.5f, 0.5f, 0.f},
 		{1.f, 0.f, 0.f}
 	},
+};
+
+const uint32_t kIndexData[] = {
+	2,1,0
 };
 
 
@@ -113,8 +125,6 @@ EEngineStatus CRender::Initialize()
 #ifdef _DEBUG
 	// setting up the debug callback
 
-	auto inst = vkGetInstanceProcAddr(m_Instance, "vkCreateDebugReportCallbackEXT");
-
 	std::tie(vkResult, m_DebugReportCallback) = m_Instance.createDebugReportCallbackEXT(reportCallbackCreateInfo, nullptr, m_DispatchLoader);
 
 	if (vkResult != vk::Result::eSuccess)
@@ -175,7 +185,7 @@ EEngineStatus CRender::Initialize()
 		// uint32_t idxCompute;
 		uint32_t nTransfer = 0;
 		// uint32_t idxTransfer;
-		uint32_t nPresent = 0;
+		// uint32_t nPresent = 0;
 
 		uint32_t idx = 0;
 		for (auto& queueFamily : queueFamilies)
@@ -403,7 +413,7 @@ EEngineStatus CRender::Initialize()
 		{},
 		m_SwapChainFormat,
 		vk::SampleCountFlagBits::e1,
-		vk::AttachmentLoadOp::eDontCare,
+		vk::AttachmentLoadOp::eClear,
 		vk::AttachmentStoreOp::eStore,
 		vk::AttachmentLoadOp::eDontCare,
 		vk::AttachmentStoreOp::eDontCare,
@@ -471,6 +481,29 @@ EEngineStatus CRender::Initialize()
 
 		i++;
 	}
+
+	// creating the uniform buffer
+	vk::BufferCreateInfo uniformBufferCreateInfo = {
+		{},
+		sizeof(UniBuffer),
+		vk::BufferUsageFlagBits::eUniformBuffer,
+		vk::SharingMode::eExclusive,
+		1,
+		&selGraphicsFamily
+	};
+
+	std::tie(vkResult, m_UniformBuffer) = m_Device.createBuffer(uniformBufferCreateInfo);
+
+	vk::MemoryRequirements memoryRequirements;
+	memoryRequirements = m_Device.getBufferMemoryRequirements(m_UniformBuffer);
+
+	vk::MemoryAllocateInfo uniformBufferAllocInfo = {
+		memoryRequirements.size,
+		FindMemoryType(memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+	};
+
+	std::tie(vkResult, m_UniformBufferMemory) = m_Device.allocateMemory(uniformBufferAllocInfo);
+	vkResult = m_Device.bindBufferMemory(m_UniformBuffer, m_UniformBufferMemory, 0);
 
 	// loading the shaders
 	if (LoadShadersTriangle() != EEngineStatus::Ok)
@@ -548,7 +581,7 @@ EEngineStatus CRender::Initialize()
 		false,
 		false,
 		vk::PolygonMode::eFill,
-		vk::CullModeFlagBits::eNone,
+		vk::CullModeFlagBits::eBack,
 		vk::FrontFace::eCounterClockwise,
 		false,
 		0,
@@ -582,11 +615,77 @@ EEngineStatus CRender::Initialize()
 		&colorBlendAttachmentState
 	};
 
-	vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
+	// S3: UB
+
+	vk::DescriptorSetLayoutBinding layoutBinding = {
+		0,
+		vk::DescriptorType::eUniformBuffer,
+		1,
+		vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eVertex,
+		nullptr
+	};
+
+	vk::DescriptorSetLayoutCreateInfo layoutCreateInfo = {
+		{},
+		1,
+		&layoutBinding
+	};
+
+	std::tie(vkResult, m_DescriptorSetLayout) = m_Device.createDescriptorSetLayout(layoutCreateInfo);
+
+	vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
+		{},
+		1,
+		&m_DescriptorSetLayout
+	};
 
 	std::tie(vkResult, m_PipelineLayout) = m_Device.createPipelineLayout(pipelineLayoutCreateInfo);
 
-	// shader stages
+	// creating the descriptor pool
+
+	vk::DescriptorPoolSize descriptorPoolSize = {
+		vk::DescriptorType::eUniformBuffer,
+		1
+	};
+
+	vk::DescriptorPoolCreateInfo descriptorPoolCreateInfo = {
+		{},
+		1,
+		1,
+		&descriptorPoolSize
+	};
+
+	std::tie(vkResult, m_DescriptorPool) = m_Device.createDescriptorPool(descriptorPoolCreateInfo);
+
+	vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo = {
+		m_DescriptorPool,
+		1,
+		&m_DescriptorSetLayout
+	};
+
+	std::vector<vk::DescriptorSet> descriptorSets;
+	std::tie(vkResult, descriptorSets) = m_Device.allocateDescriptorSets(descriptorSetAllocateInfo);
+	m_DescriptorSet = descriptorSets[0];
+
+	vk::DescriptorBufferInfo descriptorBufferInfo = {
+		m_UniformBuffer,
+		0,
+		sizeof(UniBuffer)
+	};
+
+	vk::WriteDescriptorSet descriptorWrite = {
+		m_DescriptorSet,
+		0,
+		0,
+		1,
+		vk::DescriptorType::eUniformBuffer,
+		nullptr,
+		&descriptorBufferInfo
+	};
+
+	m_Device.updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+
+	// S4: shader stages
 	vk::PipelineShaderStageCreateInfo vertShaderStageInfo = {
 		{},
 		vk::ShaderStageFlagBits::eVertex,
@@ -646,7 +745,7 @@ EEngineStatus CRender::Initialize()
 
 	// allocate and bind memory for the buffer
 
-	vk::MemoryRequirements memoryRequirements = m_Device.getBufferMemoryRequirements(m_VertexBuffer);
+	memoryRequirements = m_Device.getBufferMemoryRequirements(m_VertexBuffer);
 
 	vk::MemoryAllocateInfo vertexBufferAllocInfo = {
 		memoryRequirements.size,
@@ -664,6 +763,37 @@ EEngineStatus CRender::Initialize()
 	VKR(vkResult);
 	memcpy(pVertexDataDest, kVertexData, sizeof(kVertexData));
 	m_Device.unmapMemory(m_VertexBufferMemory);
+
+	// creating the index buffer
+
+	vk::BufferCreateInfo indexBufferCreateInfo = {
+		{},
+		sizeof(kIndexData),
+		vk::BufferUsageFlagBits::eIndexBuffer,
+		vk::SharingMode::eExclusive
+	};
+
+	std::tie(vkResult, m_IndexBuffer) = m_Device.createBuffer(indexBufferCreateInfo);
+	VKR(vkResult);
+
+	memoryRequirements = m_Device.getBufferMemoryRequirements(m_IndexBuffer);
+
+	vk::MemoryAllocateInfo indexBufferAllocInfo = {
+		memoryRequirements.size,
+		FindMemoryType(memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+	};
+
+	std::tie(vkResult, m_IndexBufferMemory) = m_Device.allocateMemory(indexBufferAllocInfo);
+	VKR(vkResult);
+	vkResult = m_Device.bindBufferMemory(m_IndexBuffer, m_IndexBufferMemory, 0);
+	VKR(vkResult);
+
+	// copy the index data
+	void* pIndexDataDest;
+	vkResult = m_Device.mapMemory(m_IndexBufferMemory, 0, sizeof(kIndexData), {}, &pIndexDataDest);
+	VKR(vkResult);
+	memcpy(pIndexDataDest, kIndexData, sizeof(kIndexData));
+	m_Device.unmapMemory(m_IndexBufferMemory);
 
 	// creating the semaphores
 	vk::SemaphoreCreateInfo semaphoreCreateInfo;
@@ -699,7 +829,7 @@ EEngineStatus CRender::Initialize()
 		vkResult = commandBuffer.begin(cbBeginInfo);
 		VKR(vkResult);
 
-		vk::ClearColorValue clearColor(std::array<float, 4>{0.33f * static_cast<float>(i), 0.f, 1.f, 1.f});
+		vk::ClearColorValue clearColor(std::array<float, 4>{0, 0, 0, 1.f});
 		vk::ClearValue clearValue(clearColor);
 
 		vk::RenderPassBeginInfo beginInfo = {
@@ -721,7 +851,11 @@ EEngineStatus CRender::Initialize()
 		vk::DeviceSize offsets[] = { 0 };
 		commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
 
-		commandBuffer.draw(3, 1, 0, 0);
+		commandBuffer.bindIndexBuffer(m_IndexBuffer, 0, vk::IndexType::eUint32);
+
+		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_PipelineLayout, 0, 1, &m_DescriptorSet, 0, nullptr);
+
+		commandBuffer.drawIndexed(3, 1, 0, 0, 0);
 
 		commandBuffer.endRenderPass();
 
@@ -734,20 +868,42 @@ EEngineStatus CRender::Initialize()
 	return EEngineStatus::Ok;
 }
 
-EEngineStatus CRender::Update()
+inline float Lerp(const float a, const float b, const float f)
 {
+    return a + f * (b - a);
+}
+
+EEngineStatus CRender::Update(const float deltaTime)
+{
+	m_ActualRotationSpeed = Lerp(m_ActualRotationSpeed, m_RotationSpeed, 0.0005f);
+	m_ActualRotationSpeed = ClampValue(m_ActualRotationSpeed, 0.f, 1000.f);
+	if(m_Angles >= 360.f)
+	{
+		m_Angles = 0.f;
+	}
+
+	m_Angles += m_ActualRotationSpeed * deltaTime;
+	
 	vk::Result vkResult;
 	uint32_t imageIndex;
 
 	std::tie(vkResult, imageIndex) = m_Device.acquireNextImageKHR(m_SwapChain, UINT64_MAX, m_ImageAvailableSemaphore, nullptr, m_DispatchLoader);
 
+	// updating the uniform buffer
+	UniBuffer bufObj = {};
+	bufObj.Angles = m_Angles; // TODO change to actual time
+	bufObj.RotationSpeed = m_ActualRotationSpeed;
 
+	void* uniformBufferMemory;
+	m_Device.mapMemory(m_UniformBufferMemory, 0, sizeof(UniBuffer), {}, &uniformBufferMemory);
+	memcpy(uniformBufferMemory, &bufObj, sizeof(UniBuffer));
+	m_Device.unmapMemory(m_UniformBufferMemory);
 
 	// submitting the command buffer
 	vk::Semaphore waitSemaphores[] = { m_ImageAvailableSemaphore };
 	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
 	vk::Semaphore signalSemaphores[] = { m_RenderFinishedSemaphore };
-	vk::CommandBuffer commandBuffers[] = {m_CommandBuffers[imageIndex]};
+	vk::CommandBuffer commandBuffers[] = { m_CommandBuffers[imageIndex] };
 
 	vk::SubmitInfo submitInfo = {
 		1,
@@ -783,6 +939,12 @@ EEngineStatus CRender::Update()
 EEngineStatus CRender::Shutdown()
 {
 	SDL_Log("[CRender] Shutting down...");
+	m_Device.destroyDescriptorSetLayout(m_DescriptorSetLayout);
+	m_Device.destroyDescriptorPool(m_DescriptorPool);
+	m_Device.freeMemory(m_UniformBufferMemory);
+	m_Device.destroyBuffer(m_UniformBuffer);
+	m_Device.freeMemory(m_IndexBufferMemory);
+	m_Device.destroyBuffer(m_IndexBuffer);
 	m_Device.freeMemory(m_VertexBufferMemory);
 	m_Device.destroyBuffer(m_VertexBuffer);
 	m_Device.destroyPipeline(m_Pipeline);
@@ -815,8 +977,15 @@ EEngineStatus CRender::Shutdown()
 EEngineStatus CRender::LoadShadersTriangle()
 {
 	vk::Result vkResult;
+#ifndef _DEBUG
+	const char* const pathVS = "triangle.vert.spv";
+	const char* const pathFS = "triangle.frag.spv";
+#else
+	const char* const pathVS = "../../shaders/triangle.vert.spv";
+	const char* const pathFS = "../../shaders/triangle.frag.spv";
+#endif
 
-	std::ifstream fVS("../../shaders/triangle.vert.spv", std::ios::ate | std::ios::binary);
+	std::ifstream fVS(pathVS, std::ios::ate | std::ios::binary);
 	if (!fVS.is_open())
 	{
 		return EEngineStatus::Failed;
@@ -840,7 +1009,7 @@ EEngineStatus CRender::LoadShadersTriangle()
 		return EEngineStatus::Failed;
 	}
 
-	std::ifstream fFS("../../shaders/triangle.frag.spv", std::ios::ate | std::ios::binary);
+	std::ifstream fFS(pathFS, std::ios::ate | std::ios::binary);
 	if (!fFS.is_open())
 	{
 		return EEngineStatus::Failed;

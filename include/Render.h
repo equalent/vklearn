@@ -20,9 +20,14 @@ class CRender
 {
 public:
 	EEngineStatus Initialize();
-	EEngineStatus Update();
+	EEngineStatus Update(float deltaTime);
 	EEngineStatus Shutdown();
+
+	float m_RotationSpeed = 5.f;
 private:
+	float m_ActualRotationSpeed = m_RotationSpeed;
+	float m_Angles = 0.f;
+	
 	EEngineStatus LoadShadersTriangle();
 	uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 	
@@ -47,8 +52,16 @@ private:
 	vk::PipelineLayout m_PipelineLayout;
 	vk::Pipeline m_Pipeline;
 
+	vk::Buffer m_UniformBuffer;
+	vk::DeviceMemory m_UniformBufferMemory;
+	vk::DescriptorPool m_DescriptorPool;
+	vk::DescriptorSet m_DescriptorSet;
+	vk::DescriptorSetLayout m_DescriptorSetLayout;
+
 	vk::Buffer m_VertexBuffer;
 	vk::DeviceMemory m_VertexBufferMemory;
+	vk::Buffer m_IndexBuffer;
+	vk::DeviceMemory m_IndexBufferMemory;
 
 	/* SEMAPHORES */
 	vk::Semaphore m_ImageAvailableSemaphore;
