@@ -9,7 +9,7 @@ layout(location = 0) out vec3 fragColor;
 
 void main() {
 	vec3 pos = inPosition;
-	float rad = -radians(ub.angles);
+	float rad = -radians(ub.angle);
 	mat3 rotMat = mat3( cos(rad), -sin(rad), 0.0,
 						sin(rad), cos(rad), 0.0,
 						0.0, 0.0, 1.0);

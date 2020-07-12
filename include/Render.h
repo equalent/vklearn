@@ -28,7 +28,7 @@ public:
 private:
 	bool m_ShowDemoWindow = true;
 	float m_ActualRotationSpeed = m_RotationSpeed;
-	float m_Angles = 0.f;
+	float m_Angle = 0.f;
 	std::string m_GpuName;
 	
 	EEngineStatus LoadShadersTriangle();

@@ -38,7 +38,7 @@ struct Vertex
 
 struct UniBuffer
 {
-	float Angles;
+	float Angle;
 	float RotationSpeed;
 };
 
@@ -1001,12 +1001,12 @@ EEngineStatus CRender::Update(const float deltaTime)
 	m_RotationSpeed = ClampValue(m_RotationSpeed, 0.f, 100000.f);
 	m_ActualRotationSpeed = Lerp(m_ActualRotationSpeed, m_RotationSpeed, 0.0005f);
 	m_ActualRotationSpeed = ClampValue(m_ActualRotationSpeed, 0.f, 100000.f);
-	if (m_Angles >= 360.f)
+	if (m_Angle >= 360.f)
 	{
-		m_Angles = 0.f;
+		m_Angle = 0.f;
 	}
 
-	m_Angles += m_ActualRotationSpeed * deltaTime;
+	m_Angle += m_ActualRotationSpeed * deltaTime;
 
 	vk::Result vkResult;
 	uint32_t imageIndex;
@@ -1015,7 +1015,7 @@ EEngineStatus CRender::Update(const float deltaTime)
 
 	// updating the uniform buffer
 	UniBuffer bufObj = {};
-	bufObj.Angles = m_Angles; // TODO change to actual time
+	bufObj.Angle = m_Angle; // TODO change to actual time
 	bufObj.RotationSpeed = m_ActualRotationSpeed;
 
 	void* uniformBufferMemory;
