@@ -22,11 +22,14 @@ public:
 	EEngineStatus Initialize();
 	EEngineStatus Update(float deltaTime);
 	EEngineStatus Shutdown();
+	const char* GetGpuName() const;
 
 	float m_RotationSpeed = 5.f;
 private:
+	bool m_ShowDemoWindow = true;
 	float m_ActualRotationSpeed = m_RotationSpeed;
 	float m_Angles = 0.f;
+	std::string m_GpuName;
 	
 	EEngineStatus LoadShadersTriangle();
 	uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
@@ -46,9 +49,11 @@ private:
 	vk::SwapchainKHR m_SwapChain;
 	std::vector<vk::ImageView> m_SwapChainImageViews;
 	vk::RenderPass m_RenderPass1;
+	vk::RenderPass m_RenderPassImGui;
 	std::vector<vk::Framebuffer> m_SwapChainFrameBuffers;
 	vk::CommandPool m_CommandPool;
 	std::vector<vk::CommandBuffer> m_CommandBuffers;
+	std::vector<vk::CommandBuffer> m_CommandBuffersImGui;
 	vk::PipelineLayout m_PipelineLayout;
 	vk::Pipeline m_Pipeline;
 
@@ -65,7 +70,8 @@ private:
 
 	/* SEMAPHORES */
 	vk::Semaphore m_ImageAvailableSemaphore;
-	vk::Semaphore m_RenderFinishedSemaphore;
+	vk::Semaphore m_RenderFinished1Semaphore;
+	vk::Semaphore m_RenderFinished2Semaphore;
 
 	vk::ShaderModule m_TriangleVS;
 	vk::ShaderModule m_TriangleFS;

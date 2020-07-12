@@ -1,6 +1,7 @@
 #include "Viewport.h"
 
 #include "Render.h"
+#include "imgui_impl_sdl.h"
 
 EEngineStatus CViewport::Initialize()
 {
@@ -11,6 +12,8 @@ EEngineStatus CViewport::Initialize()
 		return EEngineStatus::Failed;
 	}
 
+	ImGui_ImplSDL2_InitForVulkan(m_Window);
+
 	return EEngineStatus::Ok;
 }
 
@@ -20,6 +23,7 @@ EEngineStatus CViewport::Update()
 
 	while (SDL_PollEvent(&event) != 0)
 	{
+		if (ImGui_ImplSDL2_ProcessEvent(&event))continue;
 		switch (event.type)
 		{
 		case SDL_QUIT:
@@ -43,6 +47,6 @@ EEngineStatus CViewport::Update()
 
 EEngineStatus CViewport::Shutdown()
 {
-
+	ImGui_ImplSDL2_Shutdown();
 	return EEngineStatus::Ok;
 }

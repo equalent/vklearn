@@ -16,6 +16,13 @@ set(SRCS
 
 "src/Viewport.cpp"
 "include/Viewport.h"
+
+"src/imgui.cpp"
+"src/imgui_demo.cpp"
+"src/imgui_draw.cpp"
+"src/imgui_impl_sdl.cpp"
+"src/imgui_impl_vulkan.cpp"
+"src/imgui_widgets.cpp"
 )
 
 find_package(Vulkan)

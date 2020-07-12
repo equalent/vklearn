@@ -8,6 +8,6 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
 	vec4 oc = vec4(inColor, 1.0f);
-	oc.r *= mapRange(ub.speed, 0, 1000, 0, 1);
+	oc.r *= mapRange(ub.speed, 0, 100000, 0, 1);
 	outColor = oc;
 }

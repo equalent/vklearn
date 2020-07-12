@@ -10,6 +10,10 @@
 #include "SDL_vulkan.h"
 #include <glm/glm.hpp>
 
+
+#include "imgui_impl_sdl.h"
+#include "imgui_impl_vulkan.h"
+
 #ifdef _DEBUG
 VkBool32 VKAPI_CALL RenderDebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType, uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData)
 {
@@ -171,6 +175,7 @@ EEngineStatus CRender::Initialize()
 			break;
 		}
 		SDL_Log("[CRender] Found physical device: #%x (%s%s)", properties.deviceID, vendorName, properties.deviceName);
+		m_GpuName = std::string(vendorName) + std::string(properties.deviceName);
 
 		// checking suitability
 		bool suitable = true;
@@ -408,55 +413,111 @@ EEngineStatus CRender::Initialize()
 		i++;
 	}
 
-	// creating the first render pass
-	vk::AttachmentDescription colorAttachment = {
-		{},
-		m_SwapChainFormat,
-		vk::SampleCountFlagBits::e1,
-		vk::AttachmentLoadOp::eClear,
-		vk::AttachmentStoreOp::eStore,
-		vk::AttachmentLoadOp::eDontCare,
-		vk::AttachmentStoreOp::eDontCare,
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::ePresentSrcKHR
-	};
+	{
+		// creating the first render pass
+		vk::AttachmentDescription colorAttachment = {
+			{},
+			m_SwapChainFormat,
+			vk::SampleCountFlagBits::e1,
+			vk::AttachmentLoadOp::eClear,
+			vk::AttachmentStoreOp::eStore,
+			vk::AttachmentLoadOp::eDontCare,
+			vk::AttachmentStoreOp::eDontCare,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::ePresentSrcKHR
+		};
 
-	vk::AttachmentReference colorAttachmentRef = {
-		0,
-		vk::ImageLayout::eColorAttachmentOptimal
-	};
+		vk::AttachmentReference colorAttachmentRef = {
+			0,
+			vk::ImageLayout::eColorAttachmentOptimal
+		};
 
-	vk::SubpassDescription subPassDesc = {
-		{},
-		vk::PipelineBindPoint::eGraphics,
-		0,
-		nullptr,
-		1,
-		&colorAttachmentRef
-	};
+		vk::SubpassDescription subPassDesc = {
+			{},
+			vk::PipelineBindPoint::eGraphics,
+			0,
+			nullptr,
+			1,
+			&colorAttachmentRef
+		};
 
-	vk::SubpassDependency dependency = {
-		0,
-		VK_SUBPASS_EXTERNAL,
-		vk::PipelineStageFlagBits::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits::eBottomOfPipe,
-		vk::AccessFlagBits::eColorAttachmentWrite,
-		{},
-		vk::DependencyFlagBits::eByRegion
-	};
+		vk::SubpassDependency dependency = {
+			0,
+			VK_SUBPASS_EXTERNAL,
+			vk::PipelineStageFlagBits::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits::eBottomOfPipe,
+			vk::AccessFlagBits::eColorAttachmentWrite,
+			{},
+			vk::DependencyFlagBits::eByRegion
+		};
 
-	vk::RenderPassCreateInfo renderPassCreateInfo = {
-		{},
-		1,
-		&colorAttachment,
-		1,
-		&subPassDesc,
-		1,
-		&dependency
-	};
+		vk::RenderPassCreateInfo renderPassCreateInfo = {
+			{},
+			1,
+			&colorAttachment,
+			1,
+			&subPassDesc,
+			1,
+			&dependency
+		};
 
-	std::tie(vkResult, m_RenderPass1) = m_Device.createRenderPass(renderPassCreateInfo);
-	VKR(vkResult);
+		std::tie(vkResult, m_RenderPass1) = m_Device.createRenderPass(renderPassCreateInfo);
+		VKR(vkResult);
+	}
+
+	{
+		// creating the first render pass
+		vk::AttachmentDescription colorAttachment = {
+			{},
+			m_SwapChainFormat,
+			vk::SampleCountFlagBits::e1,
+			vk::AttachmentLoadOp::eDontCare,
+			vk::AttachmentStoreOp::eStore,
+			vk::AttachmentLoadOp::eDontCare,
+			vk::AttachmentStoreOp::eDontCare,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::ePresentSrcKHR
+		};
+
+		vk::AttachmentReference colorAttachmentRef = {
+			0,
+			vk::ImageLayout::eColorAttachmentOptimal
+		};
+
+		vk::SubpassDescription subPassDesc = {
+			{},
+			vk::PipelineBindPoint::eGraphics,
+			0,
+			nullptr,
+			1,
+			&colorAttachmentRef
+		};
+
+		vk::SubpassDependency dependency = {
+			0,
+			VK_SUBPASS_EXTERNAL,
+			vk::PipelineStageFlagBits::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits::eBottomOfPipe,
+			vk::AccessFlagBits::eColorAttachmentWrite,
+			{},
+			vk::DependencyFlagBits::eByRegion
+		};
+
+		vk::RenderPassCreateInfo renderPassCreateInfo = {
+			{},
+			1,
+			&colorAttachment,
+			1,
+			&subPassDesc,
+			1,
+			&dependency
+		};
+
+		std::tie(vkResult, m_RenderPassImGui) = m_Device.createRenderPass(renderPassCreateInfo);
+		VKR(vkResult);
+	}
+
+
 	i = 0;
 
 	// creating the framebuffers
@@ -643,16 +704,16 @@ EEngineStatus CRender::Initialize()
 
 	// creating the descriptor pool
 
-	vk::DescriptorPoolSize descriptorPoolSize = {
-		vk::DescriptorType::eUniformBuffer,
-		1
+	vk::DescriptorPoolSize descriptorPoolSizes[] = {
+		{vk::DescriptorType::eUniformBuffer, 1000},
+		{vk::DescriptorType::eCombinedImageSampler, 1000}
 	};
 
 	vk::DescriptorPoolCreateInfo descriptorPoolCreateInfo = {
 		{},
-		1,
-		1,
-		&descriptorPoolSize
+		5,
+		2,
+		descriptorPoolSizes
 	};
 
 	std::tie(vkResult, m_DescriptorPool) = m_Device.createDescriptorPool(descriptorPoolCreateInfo);
@@ -799,12 +860,14 @@ EEngineStatus CRender::Initialize()
 	vk::SemaphoreCreateInfo semaphoreCreateInfo;
 	std::tie(vkResult, m_ImageAvailableSemaphore) = m_Device.createSemaphore(semaphoreCreateInfo);
 	VKR(vkResult);
-	std::tie(vkResult, m_RenderFinishedSemaphore) = m_Device.createSemaphore(semaphoreCreateInfo);
+	std::tie(vkResult, m_RenderFinished1Semaphore) = m_Device.createSemaphore(semaphoreCreateInfo);
+	VKR(vkResult);
+	std::tie(vkResult, m_RenderFinished2Semaphore) = m_Device.createSemaphore(semaphoreCreateInfo);
 	VKR(vkResult);
 
 	// creating the command pool
 	vk::CommandPoolCreateInfo poolCreateInfo = {
-		{},
+		vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
 		selGraphicsFamily
 	};
 	std::tie(vkResult, m_CommandPool) = m_Device.createCommandPool(poolCreateInfo);
@@ -865,25 +928,86 @@ EEngineStatus CRender::Initialize()
 		i++;
 	}
 
+	// >>> ImGui
+
+	ImGui_ImplVulkan_InitInfo implVulkanInitInfo;
+	memset(&implVulkanInitInfo, 0, sizeof(implVulkanInitInfo));
+	implVulkanInitInfo.Instance = m_Instance;
+	implVulkanInitInfo.PhysicalDevice = selPhysicalDevice;
+	implVulkanInitInfo.Device = m_Device;
+	implVulkanInitInfo.QueueFamily = selGraphicsFamily;
+	implVulkanInitInfo.Queue = m_GraphicsQueue;
+	implVulkanInitInfo.PipelineCache = nullptr;
+	implVulkanInitInfo.DescriptorPool = m_DescriptorPool;
+	implVulkanInitInfo.MinImageCount = 3;
+	implVulkanInitInfo.ImageCount = 3;
+	implVulkanInitInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+	implVulkanInitInfo.Allocator = nullptr;
+
+	ImGui_ImplVulkan_Init(&implVulkanInitInfo, m_RenderPassImGui);
+
+	const vk::CommandBufferAllocateInfo imGuiCbInfo = {
+		m_CommandPool,
+		vk::CommandBufferLevel::ePrimary,
+		static_cast<uint32_t>(m_SwapChainImageViews.size())
+	};
+
+	std::tie(vkResult, m_CommandBuffersImGui) = m_Device.allocateCommandBuffers(imGuiCbInfo);
+
+	// <<<
+
+	// >>> ImGui Fonts
+
+	{
+		vk::CommandBuffer cb = m_CommandBuffersImGui[0];
+		vkResult = cb.reset(vk::CommandBufferResetFlagBits::eReleaseResources);
+
+		vk::CommandBufferBeginInfo cbBeginInfo = {
+			vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+		};
+		vkResult = cb.begin(cbBeginInfo);
+
+		ImGui_ImplVulkan_CreateFontsTexture(cb);
+
+		vkResult = cb.end();
+
+		vk::SubmitInfo cbSubmitInfo = {
+			0,
+			nullptr,
+			nullptr,
+			1,
+			&cb,
+			0,
+			nullptr
+		};
+
+		vkResult = m_GraphicsQueue.submit(1, &cbSubmitInfo, nullptr);
+
+		vkResult = m_Device.waitIdle();
+	}
+
+	// <<<
+
 	return EEngineStatus::Ok;
 }
 
 inline float Lerp(const float a, const float b, const float f)
 {
-    return a + f * (b - a);
+	return a + f * (b - a);
 }
 
 EEngineStatus CRender::Update(const float deltaTime)
 {
+	m_RotationSpeed = ClampValue(m_RotationSpeed, 0.f, 100000.f);
 	m_ActualRotationSpeed = Lerp(m_ActualRotationSpeed, m_RotationSpeed, 0.0005f);
-	m_ActualRotationSpeed = ClampValue(m_ActualRotationSpeed, 0.f, 1000.f);
-	if(m_Angles >= 360.f)
+	m_ActualRotationSpeed = ClampValue(m_ActualRotationSpeed, 0.f, 100000.f);
+	if (m_Angles >= 360.f)
 	{
 		m_Angles = 0.f;
 	}
 
 	m_Angles += m_ActualRotationSpeed * deltaTime;
-	
+
 	vk::Result vkResult;
 	uint32_t imageIndex;
 
@@ -900,29 +1024,72 @@ EEngineStatus CRender::Update(const float deltaTime)
 	m_Device.unmapMemory(m_UniformBufferMemory);
 
 	// submitting the command buffer
-	vk::Semaphore waitSemaphores[] = { m_ImageAvailableSemaphore };
 	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-	vk::Semaphore signalSemaphores[] = { m_RenderFinishedSemaphore };
-	vk::CommandBuffer commandBuffers[] = { m_CommandBuffers[imageIndex] };
 
 	vk::SubmitInfo submitInfo = {
 		1,
-		waitSemaphores,
+		&m_ImageAvailableSemaphore,
 		waitStages,
 		1,
-		commandBuffers,
+		&m_CommandBuffers[imageIndex],
 		1,
-		signalSemaphores
+		&m_RenderFinished1Semaphore
 	};
 
 	vkResult = m_GraphicsQueue.submit(1, &submitInfo, nullptr);
 	VKR(vkResult);
 
+	// >>> ImGui
+	ImGui_ImplVulkan_NewFrame();
+	ImGui_ImplSDL2_NewFrame(gEngine->GetViewport()->GetWindow());
+	ImGui::NewFrame();
+
+	gEngine->OnRenderGui();
+	ImGui::Render();
+	ImDrawData* drawData = ImGui::GetDrawData();
+
+	const vk::CommandBufferBeginInfo cbBeginInfo = {};
+	vkResult = m_CommandBuffersImGui[imageIndex].reset(vk::CommandBufferResetFlagBits::eReleaseResources);
+	vkResult = m_CommandBuffersImGui[imageIndex].begin(cbBeginInfo);
+
+	vk::RenderPassBeginInfo rpBeginInfo = {
+		m_RenderPassImGui,
+		m_SwapChainFrameBuffers[imageIndex],
+		{
+			{0, 0},
+			m_SwapChainExtent
+		},
+		0,
+		nullptr
+	};
+
+	m_CommandBuffersImGui[imageIndex].beginRenderPass(rpBeginInfo, vk::SubpassContents::eInline);
+	ImGui_ImplVulkan_RenderDrawData(drawData, m_CommandBuffersImGui[imageIndex]);
+	m_CommandBuffersImGui[imageIndex].endRenderPass();
+
+	vkResult = m_CommandBuffersImGui[imageIndex].end();
+
+	vk::SubmitInfo submitInfo2 = {
+		1,
+		&m_RenderFinished1Semaphore,
+		waitStages,
+		1,
+		&m_CommandBuffersImGui[imageIndex],
+		1,
+		&m_RenderFinished2Semaphore
+	};
+
+	vkResult = m_GraphicsQueue.submit(1, &submitInfo2, nullptr);
+
+	// <<<
+
 	// presenting the image
 
+	const vk::Semaphore presentWaitSemaphores[] = { m_RenderFinished1Semaphore, m_RenderFinished2Semaphore };
+
 	const vk::PresentInfoKHR presentInfo = {
-		1,
-		&m_RenderFinishedSemaphore,
+		2,
+		presentWaitSemaphores,
 		1,
 		&m_SwapChain,
 		&imageIndex
@@ -939,6 +1106,7 @@ EEngineStatus CRender::Update(const float deltaTime)
 EEngineStatus CRender::Shutdown()
 {
 	SDL_Log("[CRender] Shutting down...");
+	ImGui_ImplVulkan_Shutdown();
 	m_Device.destroyDescriptorSetLayout(m_DescriptorSetLayout);
 	m_Device.destroyDescriptorPool(m_DescriptorPool);
 	m_Device.freeMemory(m_UniformBufferMemory);
@@ -952,7 +1120,8 @@ EEngineStatus CRender::Shutdown()
 	m_Device.freeCommandBuffers(m_CommandPool, m_CommandBuffers.size(), m_CommandBuffers.data());
 	m_Device.destroyCommandPool(m_CommandPool);
 	m_Device.destroySemaphore(m_ImageAvailableSemaphore);
-	m_Device.destroySemaphore(m_RenderFinishedSemaphore);
+	m_Device.destroySemaphore(m_RenderFinished1Semaphore);
+	m_Device.destroySemaphore(m_RenderFinished2Semaphore);
 	m_Device.destroyShaderModule(m_TriangleVS);
 	m_Device.destroyShaderModule(m_TriangleFS);
 	for (vk::Framebuffer& frameBuffer : m_SwapChainFrameBuffers)
@@ -960,6 +1129,7 @@ EEngineStatus CRender::Shutdown()
 		m_Device.destroyFramebuffer(frameBuffer);
 	}
 	m_Device.destroyRenderPass(m_RenderPass1);
+	m_Device.destroyRenderPass(m_RenderPassImGui);
 	for (vk::ImageView& view : m_SwapChainImageViews)
 	{
 		m_Device.destroyImageView(view);
@@ -972,6 +1142,11 @@ EEngineStatus CRender::Shutdown()
 #endif
 	m_Instance.destroy();
 	return EEngineStatus::Ok;
+}
+
+const char* CRender::GetGpuName() const
+{
+	return m_GpuName.c_str();
 }
 
 EEngineStatus CRender::LoadShadersTriangle()
