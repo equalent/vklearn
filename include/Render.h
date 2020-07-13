@@ -3,6 +3,7 @@
 #include "Engine.h"
 
 #define VULKAN_HPP_NO_EXCEPTIONS
+#define VULKAN_HPP_ASSERT(e)
 #include "vulkan/vulkan.hpp"
 
 const vk::ApplicationInfo kRenderApplicationInfo = {
@@ -23,6 +24,8 @@ public:
 	EEngineStatus Update(float deltaTime);
 	EEngineStatus Shutdown();
 	const char* GetGpuName() const;
+	float GetAngle() const;
+	void ResetAngle();
 
 	float m_RotationSpeed = 5.f;
 private:
@@ -30,7 +33,7 @@ private:
 	float m_ActualRotationSpeed = m_RotationSpeed;
 	float m_Angle = 0.f;
 	std::string m_GpuName;
-	
+
 	EEngineStatus LoadShadersTriangle();
 	uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 	
@@ -45,6 +48,7 @@ private:
 	vk::Queue m_GraphicsQueue;
 	vk::SurfaceKHR m_Surface;
 	vk::Format m_SwapChainFormat = vk::Format::eUndefined;
+	vk::ColorSpaceKHR m_SwapChainColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear;
 	vk::Extent2D m_SwapChainExtent;
 	vk::SwapchainKHR m_SwapChain;
 	std::vector<vk::ImageView> m_SwapChainImageViews;

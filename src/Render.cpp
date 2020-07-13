@@ -22,7 +22,7 @@ VkBool32 VKAPI_CALL RenderDebugReportCallback(VkDebugReportFlagsEXT flags, VkDeb
 }
 #endif
 
-#define VKR(res) if(res != vk::Result::eSuccess){return EEngineStatus::Failed;}
+#define VKR(res) if((res) != vk::Result::eSuccess){return EEngineStatus::Failed;}
 
 template <typename T>
 T ClampValue(const T& n, const T& lower, const T& upper) {
@@ -471,7 +471,7 @@ EEngineStatus CRender::Initialize()
 			{},
 			m_SwapChainFormat,
 			vk::SampleCountFlagBits::e1,
-			vk::AttachmentLoadOp::eLoad,
+			vk::AttachmentLoadOp::eDontCare,
 			vk::AttachmentStoreOp::eStore,
 			vk::AttachmentLoadOp::eDontCare,
 			vk::AttachmentStoreOp::eDontCare,
@@ -524,7 +524,7 @@ EEngineStatus CRender::Initialize()
 	for (vk::ImageView& swapChainImageView : m_SwapChainImageViews)
 	{
 		vk::ImageView attachments[] = {
-			m_SwapChainImageViews[i]
+			swapChainImageView
 		};
 
 		vk::FramebufferCreateInfo frameBufferCreateInfo = {
@@ -930,7 +930,7 @@ EEngineStatus CRender::Initialize()
 
 	// >>> ImGui
 
-	ImGui_ImplVulkan_InitInfo implVulkanInitInfo;
+	ImGui_ImplVulkan_InitInfo implVulkanInitInfo{};
 	memset(&implVulkanInitInfo, 0, sizeof(implVulkanInitInfo));
 	implVulkanInitInfo.Instance = m_Instance;
 	implVulkanInitInfo.PhysicalDevice = selPhysicalDevice;
@@ -1013,8 +1013,14 @@ EEngineStatus CRender::Update(const float deltaTime)
 
 	std::tie(vkResult, imageIndex) = m_Device.acquireNextImageKHR(m_SwapChain, UINT64_MAX, m_ImageAvailableSemaphore, nullptr, m_DispatchLoader);
 
+	if (vkResult == vk::Result::eErrorOutOfDateKHR)
+	{
+		SDL_Log("[CRender] Swap chain is out of date!");
+		return EEngineStatus::Failed;
+	}
+
 	// updating the uniform buffer
-	UniBuffer bufObj = {};
+	UniBuffer bufObj;
 	bufObj.Angle = m_Angle; // TODO change to actual time
 	bufObj.RotationSpeed = m_ActualRotationSpeed;
 
@@ -1096,11 +1102,21 @@ EEngineStatus CRender::Update(const float deltaTime)
 	};
 
 	vkResult = m_GraphicsQueue.presentKHR(presentInfo, m_DispatchLoader);
+
+	if (vkResult == vk::Result::eErrorOutOfDateKHR)
+	{
+		SDL_Log("[CRender] Swap chain is out of date!");
+		return EEngineStatus::Failed;
+	}
+
 	VKR(vkResult);
 
 	vkResult = m_Device.waitIdle();
-	VKR(vkResult)
-		return EEngineStatus::Ok;
+	VKR(vkResult);
+
+	SDL_SetWindowSize(gEngine->GetViewport()->GetWindow(), 600, 500);
+	SDL_Delay(1000);
+	return EEngineStatus::Ok;
 }
 
 EEngineStatus CRender::Shutdown()
@@ -1147,6 +1163,17 @@ EEngineStatus CRender::Shutdown()
 const char* CRender::GetGpuName() const
 {
 	return m_GpuName.c_str();
+}
+
+float CRender::GetAngle() const
+{
+	return m_Angle;
+}
+
+void CRender::ResetAngle()
+{
+	m_ActualRotationSpeed = 0;
+	m_Angle = 0;
 }
 
 EEngineStatus CRender::LoadShadersTriangle()

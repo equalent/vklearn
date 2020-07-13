@@ -65,7 +65,7 @@ void CEngine::OnRenderGui() const
 	const ImVec2 size(400, 140);
 
 	ImGui::SetNextWindowSize(size);
-	
+
 	ImGui::Begin("VkLearn", nullptr, ImGuiWindowFlags_NoResize);
 
 	ImGui::Text("Welcome to VkLearn!\nGPU: %s", GetRender()->GetGpuName());
@@ -73,6 +73,13 @@ void CEngine::OnRenderGui() const
 	ImGui::LabelText("FPS", "%.0f", m_FPS);
 
 	ImGui::DragFloat("Rotation speed", &GetRender()->m_RotationSpeed, 1, 0, 100000, "%.2f deg/s");
+
+	ImGui::LabelText("Rotation angle", "%.0f deg", GetRender()->GetAngle());
+
+	if (ImGui::SmallButton("Reset rotation"))
+	{
+		GetRender()->ResetAngle();
+	}
 
 	ImGui::End();
 }
