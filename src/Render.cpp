@@ -1113,9 +1113,7 @@ EEngineStatus CRender::Update(const float deltaTime)
 
 	vkResult = m_Device.waitIdle();
 	VKR(vkResult);
-
-	SDL_SetWindowSize(gEngine->GetViewport()->GetWindow(), 600, 500);
-	SDL_Delay(1000);
+	
 	return EEngineStatus::Ok;
 }
 
